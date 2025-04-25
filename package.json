@@ -1,0 +1,14 @@
+{
+  "name": "pen-inventory-backend",
+  "version": "1.0.0",
+  "description": "Backend for custom pen creator",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "googleapis": "^105.0.0",
+    "google-auth-library": "^9.0.0"
+  }
+}
