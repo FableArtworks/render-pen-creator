@@ -2,7 +2,7 @@ const admin = require("firebase-admin");
 const express = require("express");
 const { google } = require("googleapis");
 const { JWT } = require("google-auth-library");
-const { v4: uuidv4 } = require("uuid"); // ✅ Add uuid for tempOrderId
+const { v4: uuidv4 } = require("uuid");
 const app = express();
 app.use(express.json());
 
@@ -25,10 +25,46 @@ const client = new JWT({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    }),
+    databaseURL: process.env.FIREBASE_DATABASE_URL,
+  });
+}
+const db = admin.database();
+
 // ----------------------------
 // TEMPORARY In-Memory Store
 // ----------------------------
 const tempOrders = {};
+
+// Helper function to decrement inventory
+async function decrementInventory(trinkets) {
+  for (const trinket of trinkets) {
+    const ref = db.ref(`trinkets/${trinket.id}/quantity`);
+    await ref.transaction((current) => {
+      return (current || 0) - 1;
+    });
+  }
+}
+
+// Helper function to log order to Google Sheet
+async function logOrderToSheet(pen, trinkets) {
+  const sheets = google.sheets({ version: "v4", auth: client });
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "InventoryLog!A1",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[new Date().toISOString(), pen, trinkets.map(t => t.name).join(", ")]],
+    },
+  });
+}
 
 // ----------------------------
 // Routes
@@ -72,15 +108,7 @@ app.post("/log", async (req, res) => {
   try {
     const { pen, trinkets } = req.body;
 
-    const sheets = google.sheets({ version: "v4", auth: client });
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
-      range: "InventoryLog!A1",
-      valueInputOption: "RAW",
-      requestBody: {
-        values: [[new Date().toISOString(), pen, trinkets.join(", ")]],
-      },
-    });
+    await logOrderToSheet(pen, trinkets);
 
     res.status(200).send("Logged");
   } catch (err) {
@@ -89,18 +117,35 @@ app.post("/log", async (req, res) => {
   }
 });
 
-// PAYMENT Webhook Route (Step 1 - Just Receiving Data)
-app.post("/payment-webhook", (req, res) => {
+// PAYMENT Webhook Route (Full Version)
+app.post("/payment-webhook", async (req, res) => {
   try {
     const { tempOrderId, paymentStatus } = req.body;
 
     console.log("Webhook received:", { tempOrderId, paymentStatus });
 
-    if (paymentStatus === "success") {
-      res.status(200).send({ message: "Payment successful webhook received." });
-    } else {
-      res.status(400).send({ message: "Payment not successful." });
+    if (paymentStatus !== "success") {
+      return res.status(400).send({ message: "Payment not successful." });
     }
+
+    const customization = tempOrders[tempOrderId];
+
+    if (!customization) {
+      return res.status(404).json({ error: "Temp order not found." });
+    }
+
+    const { pen, trinkets } = customization;
+
+    // 1. Decrement inventory
+    await decrementInventory(trinkets);
+
+    // 2. Log order to Google Sheet
+    await logOrderToSheet(pen, trinkets);
+
+    // 3. Clean up tempOrder
+    delete tempOrders[tempOrderId];
+
+    res.status(200).send({ message: "Inventory updated and order logged." });
   } catch (error) {
     console.error("Error processing webhook:", error);
     res.status(500).send({ error: "Internal server error" });
