@@ -1,13 +1,14 @@
 const express = require("express");
 const { google } = require("googleapis");
 const { JWT } = require("google-auth-library");
+const { v4: uuidv4 } = require("uuid"); // ✅ Add uuid for tempOrderId
 const app = express();
 app.use(express.json());
 
 // Enable CORS for frontend requests
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
@@ -23,6 +24,49 @@ const client = new JWT({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
+// ----------------------------
+// TEMPORARY In-Memory Store
+// ----------------------------
+const tempOrders = {};
+
+// ----------------------------
+// Routes
+// ----------------------------
+
+// TEMP-SAVE Route (Save customization temporarily)
+app.post("/temp-save", (req, res) => {
+  try {
+    const customization = req.body;
+
+    if (!customization.pen || !customization.trinkets) {
+      return res.status(400).json({ error: "Missing pen or trinkets in customization." });
+    }
+
+    const tempOrderId = uuidv4();
+    tempOrders[tempOrderId] = customization;
+
+    console.log(`Saved customization for tempOrderId: ${tempOrderId}`);
+
+    res.json({ tempOrderId: tempOrderId });
+  } catch (error) {
+    console.error("Error saving customization:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// TEMP-ORDER Route (Retrieve saved customization)
+app.get("/temp-order/:tempOrderId", (req, res) => {
+  const tempOrderId = req.params.tempOrderId;
+  const customization = tempOrders[tempOrderId];
+
+  if (!customization) {
+    return res.status(404).json({ error: "Temp order not found" });
+  }
+
+  res.json(customization);
+});
+
+// LOG Route (Log finalized order to Google Sheet)
 app.post("/log", async (req, res) => {
   try {
     const { pen, trinkets } = req.body;
@@ -44,10 +88,12 @@ app.post("/log", async (req, res) => {
   }
 });
 
+// Health Check Route
 app.get("/", (req, res) => {
   res.send("Pen inventory backend is live.");
 });
 
+// Server Listen
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
