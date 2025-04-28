@@ -43,8 +43,14 @@ const db = admin.database();
 // ----------------------------
 const tempOrders = {};
 
-// Helper function to decrement inventory
-async function decrementInventory(trinkets) {
+async function decrementInventory(pen, trinkets) {
+  // Decrement Pen
+  const penRef = db.ref(`pens/${pen}`);
+  await penRef.transaction((current) => {
+    return (current || 0) - 1;
+  });
+
+  // Decrement Trinkets
   for (const trinket of trinkets) {
     const ref = db.ref(`trinkets/${trinket.id}/quantity`);
     await ref.transaction((current) => {
