@@ -143,7 +143,7 @@ app.post("/payment-webhook", async (req, res) => {
     const { pen, trinkets } = customization;
 
     // 1. Decrement inventory
-    await decrementInventory(trinkets);
+    await decrementInventory(pen, trinkets);
 
     // 2. Log order to Google Sheet
     await logOrderToSheet(pen, trinkets);
