@@ -88,6 +88,24 @@ app.post("/log", async (req, res) => {
   }
 });
 
+// PAYMENT Webhook Route (Step 1 - Just Receiving Data)
+app.post("/payment-webhook", (req, res) => {
+  try {
+    const { tempOrderId, paymentStatus } = req.body;
+
+    console.log("Webhook received:", { tempOrderId, paymentStatus });
+
+    if (paymentStatus === "success") {
+      res.status(200).send({ message: "Payment successful webhook received." });
+    } else {
+      res.status(400).send({ message: "Payment not successful." });
+    }
+  } catch (error) {
+    console.error("Error processing webhook:", error);
+    res.status(500).send({ error: "Internal server error" });
+  }
+});
+
 // Health Check Route
 app.get("/", (req, res) => {
   res.send("Pen inventory backend is live.");
